@@ -1,0 +1,77 @@
+name: translations-weblate
+
+services:
+  repository:
+    image: weblate/weblate@sha256:6084353e0b28d35f12f65f98acf9aab7e697c8d5451830219b3b4f8330aaa0a4
+    entrypoint: [git, -c, safe.directory=/fixtures/repository, daemon]
+    command: [--reuseaddr, --export-all, --enable=receive-pack, --base-path=/fixtures, --listen=0.0.0.0, --port=9418, /fixtures]
+    healthcheck:
+      disable: true
+    volumes:
+      - ./.weblate/repository:/fixtures/repository
+    restart: unless-stopped
+
+  database:
+    image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+    environment:
+      POSTGRES_USER: weblate
+      POSTGRES_DB: weblate
+      POSTGRES_PASSWORD: local-weblate-db
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U weblate"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  cache:
+    image: valkey/valkey:9.1.2@sha256:418652cfb58ef879d4978c33553735d7147016032d5aefaa14c828e611eb9dfd
+    command: [valkey-server, --save, '60', '1', --loglevel, warning]
+    volumes:
+      - cache-data:/data
+    restart: unless-stopped
+
+  weblate:
+    image: weblate/weblate@sha256:6084353e0b28d35f12f65f98acf9aab7e697c8d5451830219b3b4f8330aaa0a4
+    depends_on:
+      database:
+        condition: service_healthy
+      cache:
+        condition: service_started
+      repository:
+        condition: service_started
+    ports:
+      - '127.0.0.1:8080:8080'
+    environment:
+      POSTGRES_USER: weblate
+      POSTGRES_DB: weblate
+      POSTGRES_PASSWORD: local-weblate-db
+      POSTGRES_HOST: database
+      REDIS_HOST: cache
+      WEBLATE_SITE_DOMAIN: localhost:8080
+      WEBLATE_ALLOWED_HOSTS: localhost,127.0.0.1
+      WEBLATE_ADMIN_NAME: admin
+      WEBLATE_ADMIN_EMAIL: admin@example.test
+      WEBLATE_ADMIN_PASSWORD: local-weblate-admin
+      WEBLATE_REGISTRATION_OPEN: '0'
+      WEBLATE_EMAIL_BACKEND: django.core.mail.backends.console.EmailBackend
+      WEBLATE_SERVER_EMAIL: weblate@example.test
+      WEBLATE_DEFAULT_FROM_EMAIL: weblate@example.test
+      WEBLATE_WORKERS: '2'
+      CELERY_WORKER_MODE: single
+      WEBLATE_VCS_PRIVATE_ALLOWLIST: repository
+      WEBLATE_VCS_ALLOW_SCHEMES: https,http,ssh,git
+    volumes:
+      - weblate-data:/app/data
+      - weblate-cache:/app/cache
+      - ./.weblate/repository:/fixtures/repository:ro
+      - ./weblate:/fixtures/scripts:ro
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  cache-data:
+  weblate-data:
+  weblate-cache:

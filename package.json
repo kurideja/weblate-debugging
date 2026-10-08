@@ -1,0 +1,34 @@
+{
+  "name": "i18next-plural-playground",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "node --test",
+    "i18n:extract": "i18next-cli extract --config i18next.config.js",
+    "i18n:preview": "i18next-cli extract --config i18next.preview.config.js",
+    "i18n:check-pushed": "node scripts/check-plural-keys.mjs .weblate/repository/src/locales",
+    "weblate:start": "node weblate/local.mjs start",
+    "weblate:import": "node weblate/local.mjs import",
+    "weblate:push": "node weblate/local.mjs push",
+    "weblate:git": "node weblate/local.mjs git",
+    "weblate:verify": "node weblate/local.mjs verify",
+    "weblate:export": "node weblate/local.mjs export",
+    "weblate:apply": "node weblate/local.mjs apply",
+    "weblate:stop": "node weblate/local.mjs stop",
+    "weblate:logs": "node weblate/local.mjs logs"
+  },
+  "dependencies": {
+    "i18next": "^26.4.2",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-i18next": "^17.0.16"
+  },
+  "devDependencies": {
+    "i18next-cli": "^1.75.1",
+    "vite": "^8.3.4"
+  }
+}

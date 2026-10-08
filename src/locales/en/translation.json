@@ -1,0 +1,16 @@
+{
+  "apples_one": "{{count}} apple",
+  "apples_other": "{{count}} apples",
+  "category": "Category",
+  "comparison": "Plural comparison",
+  "count": "Count",
+  "description": "Try a count and compare English and Lithuanian translations.",
+  "examples": "Examples",
+  "files_one": "{{count}} file",
+  "files_other": "{{count}} files",
+  "language": "Language",
+  "messages_one": "{{count}} message",
+  "messages_other": "{{count}} messages",
+  "title": "Plural playground",
+  "translation": "Translation"
+}

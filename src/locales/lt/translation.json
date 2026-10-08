@@ -1,0 +1,22 @@
+{
+  "apples_one": "{{count}} obuolys",
+  "apples_few": "{{count}} obuoliai",
+  "apples_many": "{{count}} obuolio",
+  "apples_other": "{{count}} obuolių",
+  "category": "Kategorija",
+  "comparison": "Daugiskaitos palyginimas",
+  "count": "Skaičius",
+  "description": "Įveskite skaičių ir palyginkite anglų bei lietuvių kalbų vertimus.",
+  "examples": "Pavyzdžiai",
+  "files_one": "{{count}} failas",
+  "files_few": "{{count}} failai",
+  "files_many": "{{count}} failo",
+  "files_other": "{{count}} failų",
+  "language": "Kalba",
+  "messages_one": "{{count}} a žinutė",
+  "messages_few": "{{count}} a žinutės",
+  "messages_many": "{{count}} a žinutės",
+  "messages_other": "{{count}} a žinučių",
+  "title": "Daugiskaitos bandymai",
+  "translation": "Vertimas"
+}
