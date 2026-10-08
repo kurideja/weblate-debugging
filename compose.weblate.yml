@@ -1,9 +1,13 @@
+# Set COMPOSE_PROJECT_NAME to run a separate instance with its own volumes.
 name: translations-weblate
 
 services:
   repository:
     image: weblate/weblate@sha256:6084353e0b28d35f12f65f98acf9aab7e697c8d5451830219b3b4f8330aaa0a4
     entrypoint: [git, -c, safe.directory=/fixtures/repository, daemon]
+    user: '${LOCAL_UID:-0}:${LOCAL_GID:-0}'
+    environment:
+      HOME: /tmp
     command: [--reuseaddr, --export-all, --enable=receive-pack, --base-path=/fixtures, --listen=0.0.0.0, --port=9418, /fixtures]
     healthcheck:
       disable: true
@@ -43,14 +47,15 @@ services:
       repository:
         condition: service_started
     ports:
-      - '127.0.0.1:8080:8080'
+      - '127.0.0.1:${WEBLATE_PORT:-8080}:8080'
     environment:
       POSTGRES_USER: weblate
       POSTGRES_DB: weblate
       POSTGRES_PASSWORD: local-weblate-db
       POSTGRES_HOST: database
       REDIS_HOST: cache
-      WEBLATE_SITE_DOMAIN: localhost:8080
+      WEBLATE_SITE_DOMAIN: 'localhost:${WEBLATE_PORT:-8080}'
+      WEBLATE_PORT: '${WEBLATE_PORT:-8080}'
       WEBLATE_ALLOWED_HOSTS: localhost,127.0.0.1
       WEBLATE_ADMIN_NAME: admin
       WEBLATE_ADMIN_EMAIL: admin@example.test
@@ -66,7 +71,6 @@ services:
     volumes:
       - weblate-data:/app/data
       - weblate-cache:/app/cache
-      - ./.weblate/repository:/fixtures/repository:ro
       - ./weblate:/fixtures/scripts:ro
     restart: unless-stopped
 

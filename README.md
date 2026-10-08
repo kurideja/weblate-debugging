@@ -1,169 +1,176 @@
 # i18next plural playground
 
-A small React + Vite app for testing English and Lithuanian i18next translations before and after editing them in Weblate.
+A small React app and local Weblate setup for reproducing an English/Lithuanian i18next JSON v4 round trip: extract keys from code, import JSON into Weblate through Git, edit translations, and inspect the files pushed back to Git.
 
-## Run locally
+The pinned **Weblate 2026.10** instance was observed to expose three Lithuanian editor forms and remove fractional `_many` keys when saving plural entries. This repository makes that behavior reproducible and keeps the input, output, and verification report separate.
 
-Use Node.js 22.12+ (or 24+).
+## Requirements
+
+- Node.js **22.12 or newer**; Node.js 24 is used for local validation.
+- Git on your command path.
+- Docker with Compose v2 or newer, with the Docker engine running, for Weblate.
+- Ports 5173 (React) and 8080 (Weblate) available. Vite prints an alternative port if 5173 is busy.
+
+Run commands from the repository root. No GitHub account, remote repository, or external Weblate instance is needed. The Docker images require a download on first startup; dependencies are locked in `package-lock.json`, and container images are pinned by digest.
+
+## Start the app and Weblate
+
+After cloning this repository:
 
 ```sh
-npm install
+npm ci
 npm run dev
 ```
 
-Open the local URL printed by Vite (normally http://127.0.0.1:5173). Switch languages, enter a nonnegative count (including fractions), or use the preset buttons. The comparison table renders both languages at once. Translation JSON edits update through Vite; no translation service is needed at runtime.
+Open the URL Vite prints, normally http://127.0.0.1:5173. Switch languages, enter a count, or use the presets. Fractions such as `1.5` exercise Lithuanian `_many`.
+
+In another terminal, with Docker running:
 
 ```sh
-npm test
-npm run build
+npm run weblate:start
 ```
 
-## Translation files and plurals
+First startup can take several minutes. This seeds a local Git fixture, starts Weblate, PostgreSQL, Valkey, and a Git service, and imports the translation component. Subsequent starts retain the existing fixture and Weblate data.
 
-- English: `src/locales/en/translation.json`
-- Lithuanian: `src/locales/lt/translation.json`
+| Setting | Value |
+| --- | --- |
+| Weblate URL | http://localhost:8080 |
+| Username | `admin` |
+| Password | `local-weblate-admin` |
+| Lithuanian component | http://localhost:8080/projects/plural-playground/i18next-v4/lt/ |
 
-The app uses [i18next JSON v4](https://www.i18next.com/translation-function/plurals): call `t('apples', { count })` and i18next selects a suffix using `Intl.PluralRules`.
+These credentials are for this local demo. The UI listens on loopback; the database, cache, and Git service have no published ports. Email goes to the container log. The setup follows [Weblate's Docker installation](https://docs.weblate.org/en/latest/admin/install/docker.html).
+
+## Extract → import → edit → push
+
+```mermaid
+flowchart LR
+  C["React t() calls"] -->|i18n:extract| J["src/locales JSON"]
+  J -->|weblate:import| G["Local Git fixture"]
+  G -->|pull| W["Weblate"]
+  W -->|weblate:push| G
+  W -->|weblate:export| E[".weblate/export"]
+  E -->|weblate:apply| J
+```
+
+1. Extract keys into the app's JSON and import them into Weblate:
+
+   ```sh
+   npm run i18n:extract
+   npm run weblate:import
+   ```
+
+   The extractor preserves existing translations and creates missing keys with blank values. Review or fill those values before importing. If you edited `src/locales` directly, just run `weblate:import`; extraction is not required. Import commits the files to local Git and waits for Weblate to parse them.
+
+2. Open the Lithuanian component, choose **Translate**, search for `apples`, and edit/save its plural forms.
+
+3. Push the Weblate edits back to local Git and check the received keys:
+
+   ```sh
+   npm run weblate:push
+   npm run i18n:check-pushed
+   git -C .weblate/repository show HEAD -- src/locales
+   ```
+
+   Inspect `.weblate/repository/src/locales/lt/translation.json`. With the pinned version, editing a Lithuanian plural entry can remove its `_many` key. The key check exits with code 1 if a required form is missing, including when the translation would otherwise fall back at runtime.
+
+**Inspect the pushed file before extracting again.** Extraction regenerates missing keys and can conceal what Weblate removed. It does not recover their translation values.
+
+Pushes are manual by default. Both Weblate's pull and push URLs are `git://repository/repository`, using branch `main`. `weblate:push` commits pending edits and performs a real Git push to the Docker Git service. Git's [`updateInstead`](https://git-scm.com/docs/git-config#Documentation/git-config.txt-receivedenyCurrentBranch) setting updates the fixture's checked-out files when it receives a push; an uncommitted fixture change causes the push to be rejected.
+
+## Inspect extraction and serialization separately
+
+To generate a separate extraction preview:
+
+```sh
+npm run i18n:preview
+```
+
+Open `.weblate/extracted/lt/translation.json`. A fresh preview contains `apples_many`, `messages_many`, and `files_many`, with blank Lithuanian values. Preview extraction merges with its own previous output on later runs. It does not import anything into Weblate.
+
+The [official i18next CLI](https://github.com/i18next/i18next-cli) reads `i18next.config.js`, with `locales: ['en', 'lt']`. Literal calls such as `t('apples', { count })` make plural use visible to static extraction; the CLI generates the language-specific suffixes. English defaults in the React calls provide source plural text. Lithuanian values must be translated.
+
+To inspect Weblate's JSON writer before pushing:
+
+```sh
+npm run weblate:export
+```
+
+This commits pending Weblate edits and writes the actual repository file contents, including their formatting, into `.weblate/export/en/translation.json` and `.weblate/export/lt/translation.json`. It lists keys that differ from the app's JSON. It does not push or update the React files.
+
+To replace the app's translations with those exports:
+
+```sh
+npm run weblate:apply
+npm test
+```
+
+`weblate:apply` overwrites both `src/locales` JSON files with the last export. The app tests fail if required plural forms or `{{count}}` placeholders are missing. They allow translation wording to change. Missing `_many` can resolve to `_other` in the UI, so the tests and file inspection are needed as well.
+
+## Automated reproduction
+
+```sh
+npm run weblate:verify
+```
+
+The verifier commits pending edits, snapshots the Lithuanian JSON, temporarily edits the three sample plural entries through Weblate's REST editor, and flushes the JSON writer. It saves:
+
+- `.weblate/verification.json`: input, output, form counts, removed/added keys, and restoration status.
+- `.weblate/round-trip/lt/translation.json`: the JSON written after the temporary edits.
+
+It then restores the original JSON in Weblate and parses it again. Test and restoration commits remain in Weblate history but are not pushed automatically. Start with all four forms for each sample present in Weblate; if keys are already missing, extract/fill/import them first.
+
+In the pinned Weblate 2026.10 instance, the test reproduced removal of `apples_many`, `messages_many`, and `files_many`. The visible `_one`, `_few`, and `_other` forms and their placeholders were saved correctly. **Exit code 1 is expected for this reproduced failure.** A complete round trip returns 0; setup or restoration errors are also reported as failures. This result applies to the pinned version and this fixture.
+
+## Command reference
+
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Run the React app with live updates. |
+| `npm test` | Check translated plural completeness and runtime selection. |
+| `npm run build` | Build the app into `dist`. |
+| `npm run preview` | Serve the built app locally. |
+| `npm run i18n:extract` | Merge code-extracted keys into `src/locales`. |
+| `npm run i18n:preview` | Generate a separate extraction preview. |
+| `npm run i18n:check-pushed` | Check plural key presence in local Git; blank values are allowed. |
+| `npm run weblate:start` | Start/resume containers and create the component if needed. |
+| `npm run weblate:import` | Commit app JSON into local Git, then pull/parse it in Weblate. |
+| `npm run weblate:push` | Commit Weblate edits and push them to local Git. |
+| `npm run weblate:git` | Show the fixture's recent commits and working-tree status. |
+| `npm run weblate:verify` | Run the temporary edit/serialize/restore check. |
+| `npm run weblate:export` | Copy Weblate's current repository JSON into `.weblate/export`. |
+| `npm run weblate:apply` | Replace app JSON with the last exported files. |
+| `npm run weblate:logs` | Follow Weblate logs; press Ctrl+C to stop following. |
+| `npm run weblate:stop` | Stop containers while retaining their data. |
+
+## Plural rules and Weblate configuration
 
 | Language | Suffixes | Examples |
 | --- | --- | --- |
 | English | `_one`, `_other` | 1 → one; 0, 2, 1.5 → other |
 | Lithuanian | `_one`, `_few`, `_many`, `_other` | 1, 21 → one; 2, 22 → few; 1.5 → many; 0, 10, 11 → other |
 
-Lithuanian needs additional forms that do not exist in the English source. In particular, fractions exercise `_many`. There is deliberately no `_zero` override, so zero tests the normal plural rules. Fallback is disabled to make missing translations visible instead of silently showing English. A missing plural form can still resolve to `_other` under i18next's own resolution rules; `npm test` checks that every required form exists.
+The app uses [i18next JSON v4](https://www.i18next.com/translation-function/plurals) and `Intl.PluralRules`. There is no `_zero` override. Language fallback is disabled; i18next's own plural resolution can still use `_other` when a specific form is missing.
 
-## Weblate component settings
-
-Use these settings when connecting this repository to your Weblate instance:
+For another Weblate instance, configure:
 
 | Setting | Value |
 | --- | --- |
-| File format | i18next JSON file v4 (`i18nextv4`) |
+| File format | i18next JSON file **v4** (`i18nextv4`) |
 | File mask | `src/locales/*/translation.json` |
 | Monolingual base language file | `src/locales/en/translation.json` |
 | Source language | English (`en`) |
 
-Select **v4** explicitly rather than v3 or generic JSON. [Weblate's documentation](https://docs.weblate.org/en/latest/formats/i18next.html) describes v4 support (added in 4.15.1).
+Choose v4 explicitly rather than v3 or generic JSON; see [Weblate's i18next documentation](https://docs.weblate.org/en/latest/formats/i18next.html).
 
-To test a round trip, import these files into Weblate, edit the Lithuanian plural forms, bring the resulting JSON back into `src/locales/lt/translation.json`, and run the tests and app. Check 1, 2, 10, 11, 21, 22, and 1.5; verify that `{{count}}` and all four Lithuanian suffixes survive the round trip.
+## Troubleshooting and local data
 
-## Local Weblate
+- **Docker unavailable:** start Docker Desktop or your Docker engine, then rerun `weblate:start`.
+- **Startup fails or times out:** run `weblate:logs`. Check port availability and Docker's available memory.
+- **Port 8080 is occupied:** set `WEBLATE_PORT=8081` in your shell before running Weblate commands. Open http://localhost:8081 instead. Keep that setting for later commands.
+- **Import or push conflicts:** inspect the component's repository alerts. Both the app and Weblate can edit the same keys; the scripts do not force-push or reset history.
+- **Fixture has uncommitted edits:** inspect `git -C .weblate/repository status`; commit or resolve those changes before importing or pushing.
 
-### Extract from React code, then round-trip through Git
+All generated fixtures, previews, exports, and reports live in the ignored `.weblate/` directory. Weblate's database, working repositories, and caches live in named Docker volumes. Stopping the containers preserves them. Sharing this repository shares the setup and sample JSON, not your local Weblate database or generated reports.
 
-The project uses the [official i18next CLI](https://github.com/i18next/i18next-cli) with `locales: ['en', 'lt']` in `i18next.config.js`. Plural calls use literal keys so static extraction can find them:
-
-```jsx
-t('apples', {
-  count,
-  defaultValue_one: '{{count}} apple',
-  defaultValue_other: '{{count}} apples',
-})
-```
-
-The `count` option marks the key as plural. The CLI generates each language's categories automatically: English gets `_one` and `_other`; Lithuanian gets `_one`, `_few`, `_many`, and `_other`. You do not put Lithuanian suffixes into the React calls.
-
-To inspect extraction separately from the existing translated JSON:
-
-```sh
-npm run i18n:preview
-```
-
-Open `.weblate/extracted/lt/translation.json`. Even on its first run with no existing output, it contains `apples_many`, `messages_many`, and `files_many`. Lithuanian values are blank because the extractor generates keys, not translations. This preview merges with its own previous output on subsequent runs.
-
-For the actual round trip, use the app's existing translated files:
-
-```sh
-npm run i18n:extract
-npm test
-npm run weblate:start
-npm run weblate:import
-```
-
-`i18n:extract` scans `src` and merges keys into `src/locales`, preserving existing translations. Missing Lithuanian forms are generated with empty values. Review those files before importing. The import commits this extracted output into the local fixture repository and asks Weblate to pull it.
-
-Now edit/save a Lithuanian plural entry in Weblate, then:
-
-```sh
-npm run weblate:push
-npm run i18n:check-pushed
-git -C .weblate/repository log -5 --oneline
-```
-
-Inspect `.weblate/repository/src/locales/lt/translation.json` to see the actual pushed output. `i18n:check-pushed` checks required key presence and exits with code 1 if forms such as `_many` disappeared. It does not require new translations to be filled in. **Check the pushed file before extracting again:** extraction regenerates missing keys and can conceal what Weblate removed.
-
-To try the received JSON in the React app, use `npm run weblate:export`, inspect the exported files, then `npm run weblate:apply` and `npm test`. With the current Weblate regression, the pushed-key check and the app's translation completeness tests fail after a Lithuanian plural edit drops `_many`.
-
-Start Docker Desktop, then run:
-
-```sh
-npm run weblate:start
-```
-
-This starts Weblate, PostgreSQL, Valkey, and an internal Git fixture service. It waits for Weblate to finish initialization and creates the **Plural playground → i18next JSON v4** component with English and Lithuanian translations. Images are pinned by digest; the tested Weblate version is **2026.10**. The configuration follows [Weblate's Docker installation](https://docs.weblate.org/en/latest/admin/install/docker.html).
-
-- URL: http://localhost:8080
-- Username: `admin`
-- Password: `local-weblate-admin`
-- Lithuanian component: http://localhost:8080/projects/plural-playground/i18next-v4/lt/
-
-These are local test credentials. The UI is bound to loopback, the database/cache/Git service have no published ports, and emails go to the container log. Weblate data persists in named Docker volumes. The fixture is an isolated Git repository in `.weblate/repository`, seeded from `src/locales`; no remote account or GitHub repository is needed.
-
-### Reproduced plural issue
-
-In the pinned Weblate 2026.10 instance, the Lithuanian editor exposes **three** forms for `apples`, `messages`, and `files`: `_one`, `_few`, and `_other`. The input JSON contains a fourth fractional form, `_many`, which i18next uses for counts such as `1.5`.
-
-Editing the three visible forms and committing the changes **removes the corresponding `_many` keys** from the serialized JSON. The automated test reproduced removal of `apples_many`, `messages_many`, and `files_many`; the visible forms and their `{{count}}` placeholders were saved correctly. This fixture demonstrates a failing round trip, not full Lithuanian plural support.
-
-```sh
-npm run weblate:verify
-```
-
-The check uses Weblate's REST edit path with temporary markers, flushes edits through its JSON writer, and saves a before/after report to `.weblate/verification.json`. The processed Lithuanian JSON is saved to `.weblate/round-trip/lt/translation.json`. **Exit code 1 is expected for this reproduced regression.** The check restores the complete original file in Weblate afterward, including `_many` values. Test edits and restoration commits remain in Weblate history.
-
-### Try your own edits
-
-1. Open the Lithuanian component, choose **Translate**, search for `apples`, and edit/save its plural forms.
-2. Export the actual repository files (this also commits pending edits):
-
-   ```sh
-   npm run weblate:export
-   ```
-
-   Inspect `.weblate/export/en/translation.json` and `.weblate/export/lt/translation.json`. The command lists keys that differ from the React source files, including removed keys.
-
-3. To apply the exported files to the React app:
-
-   ```sh
-   npm run weblate:apply
-   npm test
-   npm run dev
-   ```
-
-   Missing Lithuanian `_many` forms fail the completeness test. The React app can fall back to `_other` for fractions when `_many` is absent, so inspect the files and tests as well as the UI.
-
-After editing the React source JSON, use `npm run weblate:import` to commit the fixture changes and update Weblate. If both sides edited the same strings, inspect Weblate's repository alerts for merge conflicts.
-
-### Push to local Git
-
-Weblate can push real Git commits to `.weblate/repository` through the internal Docker Git service. Both pull and push URLs are `git://repository/repository`; the branch is `main`. Pushes are manual so you can inspect the files before sending changes.
-
-After editing and saving a translation in Weblate, run:
-
-```sh
-npm run weblate:push
-npm run weblate:git
-git -C .weblate/repository show HEAD -- src/locales
-```
-
-The push command commits pending Weblate edits, updates from the local remote, pushes, and prints the latest received commits. You can also use Weblate's component **Manage → Repository maintenance → Push** action. Inspect the resulting file directly at `.weblate/repository/src/locales/lt/translation.json`.
-
-The fixture uses Git's [`receive.denyCurrentBranch=updateInstead`](https://git-scm.com/docs/git-config#Documentation/git-config.txt-receivedenyCurrentBranch) so a received push updates both its branch and checked-out files. Keep this fixture's working tree clean; uncommitted edits cause Git to reject the push. The Git service has no published host port. `npm run weblate:start` preserves received changes; only `npm run weblate:import` copies React source translations into the fixture.
-
-The `_many` serialization issue also affects pushed files. Run `npm run weblate:export` before pushing to inspect the changes. The React source files are updated only when you run `npm run weblate:apply`.
-
-```sh
-npm run weblate:logs  # startup, parsing, and repository logs; Ctrl+C to exit
-npm run weblate:stop  # stops containers and preserves translations
-npm run weblate:start # resumes the instance
-```
+For independent instances, use separate checkouts and different `COMPOSE_PROJECT_NAME` and `WEBLATE_PORT` environment values. Keep those values set for every command belonging to that instance.

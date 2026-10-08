@@ -1,5 +1,6 @@
 """Run inside Weblate with: weblate shell < /fixtures/scripts/bootstrap.py."""
 import subprocess
+import os
 from pathlib import Path
 
 from django.test.utils import override_settings
@@ -34,6 +35,7 @@ if component is None:
             file_format="i18nextv4",
             source_language=Language.objects.get(code="en"),
             push_on_commit=False,
+            push="git://repository/repository",
         )
 elif component.repo != "git://repository/repository":
     component.repo = "git://repository/repository"
@@ -46,12 +48,12 @@ if component.translation_set.filter(language__code="lt").count() == 0:
                              changed_variant=False, changed_enforced_checks=False,
                              skip_push=True, create=True)
 
-for translation in component.translation_set.select_related("language"):
-    print(f"{translation.language.code}: {translation.unit_set.count()} strings")
 if component.push != component.repo:
     component.push = component.repo
     component.push_on_commit = False
     with override_settings(CELERY_TASK_ALWAYS_EAGER=True):
         component.save()
+for translation in component.translation_set.select_related("language"):
+    print(f"{translation.language.code}: {translation.unit_set.count()} strings")
 print("Manual pushes enabled to git://repository/repository (local Docker service).")
-print("Open http://localhost:8080/projects/plural-playground/i18next-v4/")
+print(f"Open http://localhost:{os.environ.get('WEBLATE_PORT', '8080')}/projects/plural-playground/i18next-v4/")

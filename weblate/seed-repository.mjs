@@ -1,4 +1,4 @@
-import { mkdir, cp } from 'node:fs/promises';
+import { mkdir, cp, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -15,6 +15,14 @@ if (existing && !process.argv.includes('--update')) {
 }
 if (existing && git('status', '--porcelain').trim()) {
   throw new Error('The fixture repository has uncommitted changes. Commit them before importing.');
+}
+// Validate both files before changing the fixture or creating a commit.
+for (const lang of ['en', 'lt']) {
+  const path = `${root}/src/locales/${lang}/translation.json`;
+  const data = JSON.parse(await readFile(path, 'utf8'));
+  if (!data || Array.isArray(data) || typeof data !== 'object') {
+    throw new Error(`${path} must contain a JSON object`);
+  }
 }
 await mkdir(`${repo}/src`, { recursive: true });
 await cp(`${root}/src/locales`, `${repo}/src/locales`, { recursive: true });

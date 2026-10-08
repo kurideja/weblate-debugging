@@ -22,15 +22,17 @@ test('every example includes all plural categories and preserves count interpola
 
 test('i18next selects English and Lithuanian forms across integer boundaries and fractions', () => {
   const cases = [
-    [0, '0 apples', '0 obuolių'], [1, '1 apple', '1 obuolys'],
-    [2, '2 apples', '2 obuoliai'], [10, '10 apples', '10 obuolių'],
-    [11, '11 apples', '11 obuolių'], [19, '19 apples', '19 obuolių'],
-    [21, '21 apples', '21 obuolys'], [22, '22 apples', '22 obuoliai'],
-    [101, '101 apples', '101 obuolys'], [111, '111 apples', '111 obuolių'],
-    [1.5, '1.5 apples', '1.5 obuolio'],
+    [0, 'other'], [1, 'one'], [2, 'few'], [10, 'other'],
+    [11, 'other'], [19, 'other'], [21, 'one'], [22, 'few'],
+    [101, 'one'], [111, 'other'], [1.5, 'many'], [2.5, 'many'],
   ];
-  for (const [count, en, lt] of cases) {
-    assert.equal(i18n.t('apples', { lng: 'en', count }), en);
-    assert.equal(i18n.t('apples', { lng: 'lt', count }), lt);
+  for (const [count, ltCategory] of cases) {
+    for (const [lng, category] of [['en', count === 1 ? 'one' : 'other'], ['lt', ltCategory]]) {
+      for (const key of ['apples', 'messages', 'files']) {
+        const template = resources[lng].translation[`${key}_${category}`];
+        assert.equal(typeof template, 'string', `${lng}: ${key}_${category}`);
+        assert.equal(i18n.t(key, { lng, count }), template.replaceAll('{{count}}', String(count)), `${lng}: ${key}, count ${count}`);
+      }
+    }
   }
 });
